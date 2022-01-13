@@ -1,0 +1,197 @@
+---
+title: "Législatives 2022"
+subtitle: "Analyses des résultats de 2017"
+date: "`r Sys.Date()`"
+author: 
+ - name: Claude Grasland
+   affiliation: Militant EELV94, Groupe local Vallée du Morbras
+image: "figures/circo94.jpg"   
+logo: "figures/EELV94.png"  
+output:
+  rzine::readrzine:
+    highlight: kate
+    number_sections: true
+csl: Rzine_citation.csl
+bibliography: biblio.bib
+nocite: |
+  @*
+link-citations: true
+#licence: "[![licensebuttons by-sa](https://licensebuttons.net/l/by-sa/3.0/88x31.png)](https://creativecommons.org/licenses/by-sa/4.0)"
+#giturl: "[![Code source on GitHub](https://badgen.net/badge/Code%20source%20on%20/GitHub/blue?icon=github)](xxx)"
+#doi: "[![DOI:xxx](https://zenodo.org/badge/DOI/xxx.svg)](https://doi.org/xxx)"
+---
+
+
+```{r setup, include=FALSE}
+
+library(knitr)
+library(rzine)
+library(sf)
+library(mapview)
+library(dplyr)
+library(DT)
+library(ggplot2)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               prompt=FALSE,
+               tidy=FALSE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               class.source="bg-info",
+               class.output="bg-warning")
+
+# opts_knit$set(width=75)
+```
+
+
+
+# Introduction {-}
+
+L'objectif de ce document est de fournir des analyses objectives des résultats des dernières élections législatives afin de préparer dans les meilleures conditions la victoire des candidats écologistes et d'éviter une concurrence suicidaire entre listes de gauche. 
+
+# Sources
+
+## Résultats par bureau de vote
+
+Les données détaillées du premier tour de l'élection de 2017 par bureau de vote sont accessibles via la plateforme *opendatasoft* en cliquant sur [ce lien](https://public.opendatasoft.com/explore/dataset/elections-legislatives-2017-resultats-par-bureaux-de-vote-tour-1/table/?disjunctive.libelle_de_la_commune). On peut explorer les données directement sur le site opendatasoft et constater qu'il existe même une localisation géographique des bureaux de vote, malheureusement incomplète.
+
+Si par exemple on veut connaître les résultats de Samuel Szymanski et Eliane Simon, candidats EELV sur la 4e circonscription en 2017, on peut facilement obtenir un tableau fournissant les résultats détaillés et complets pour les 78 bureaux de vote :
+
+```{r}
+knitr::include_graphics("figures/Szymanski.png")
+```
+Par exemple, ces candidats ont obtenus 25 voix, soit 2.43% des inscrits et 5.38% des suffrages exprimés dans le bureau de vote n°1 de Villiers sur Marne localisé salle des fêtes Georges Brassens, rue Boildieu, situé au point de latitude 48.826275 et de longitude 2.541606. Il est donc possible de réaliser des cartes de géolocalisation précise des votes mais à deux réserves près :
+
+- **le site fournit la position des bureaux de vote mais pas les contours des zones électorales** : le seul fichier de contours dont nous disposions date de 2007 et il n'est plus à jour dans la plupart des communes. On ne pourra donc faire que des cartes par point.
+- **Certaines coordonnées de bureaux de vote sont manquantes** : Par exemple, dans le cas de la 4e ciconscription il manque les coordonnées des bureaux de vote d'Ormesson. Il est possible de les compléter mais cela prend un peu de temps.
+
+
+
+
+## Circonscriptions
+
+En dehors de la localisation des bureaux de vote, il est évidemment intéressant de pouvoir tracer le contour des circonscriptions électorales. Pour cela, on peut utiliser une autre ressource produite par Mapotempo et disponible sur le site *data.gouv.fr* en cliquant sur [ce lien](https://www.data.gouv.fr/fr/datasets/contours-detailles-des-circonscriptions-des-legislatives/) 
+
+Le fonds de carte est légèrement généralisé (simplification du controur) pour faciliter la lecture des cartes, mais il se superpose facilement sur un fonds de repérage des rues de type Open Street Map et ne semble pas comporter d'erreurs dans le cas du Val-de-Marne. 
+
+
+
+## Test de superposition
+
+On peut effectuer un test de superposition des bureaux de vote sur le fonds de carte des circonscription pour repérer les géolocalisations manquantes.
+
+```{r, echo=FALSE}
+
+
+map94<-readRDS("data/maps/circo94.RDS" )
+map1 <- mapview(map94, col.regions=rainbow(n=11), alpha.regions=0.2, layer.name = "circonscriptions")
+
+
+
+bv<-st_read("data/bv/bv.geojson", quiet=T)
+bv2<- bv %>% select(circ=libelle_de_la_circonscription,
+                    com=libelle_de_la_commune, 
+                    bv_code = code_du_b_vote,
+                    bv_nom = uniq_bdv,
+                    bv_adr =adresse) %>%
+            unique()
+map2<-mapview(bv2,cex=4, layer.name="BdV localisés")
+map1+map2
+```
+
+
+A première vue, il ne manque que 22 localisations sur les 813 bureaux de vote, ce qu devrait pouvoir être complété facilement.
+
+```{r}
+bv3<-bv2 %>% filter(is.na(st_coordinates(bv2)[,1])==T) %>% st_drop_geometry() %>% arrange(com,bv_code)
+
+kable(bv3)
+```
+
+# Participation
+
+
+## Tableau de base
+
+```{r, echo=FALSE}
+tab1<-bv %>% st_drop_geometry() %>%
+           select(circ=code_de_la_circonscription,
+                    com=libelle_de_la_commune, 
+                    bv_code = code_du_b_vote,
+                    bv_nom = uniq_bdv,
+                    inscrits,
+                    votants,
+                    blancs,
+                    nuls,
+                   exprimes) %>%
+            unique() %>%
+            arrange(circ,com,bv_code)
+datatable(tab1)
+```
+
+## Participation
+
+```{r, echo=FALSE}
+tab2 <-tab1 %>% group_by(circ) %>% summarise(inscrits=sum(inscrits),
+                                             votants = sum(votants),
+                                             blancs_nuls = sum(blancs)+sum(nuls),
+                                             exprimes = sum(exprimes)) %>%
+                               mutate(tx_abstention = 100*(inscrits-votants)/inscrits,
+                                      tx_refusvote = 100*(blancs_nuls/exprimes))
+kable(tab2,digits=c(NA,0,0,0,0,1,1))
+
+```
+
+
+```{r, echo=FALSE}
+ggplot(tab2, aes(x=tx_abstention, y=tx_refusvote,label=circ)) + 
+   geom_text() +
+  scale_x_continuous("Refus de vote (abstention en % inscrits)")+
+  scale_y_continuous("Refus de choix (blancs et nuls en % des votants)")+
+  ggtitle("Elections législatives de 2017 dans le Val de Marne", "Participation par circonscription")
+```
+
+
+
+
+
+# Bibliographie {-}
+
+<div id="refs"></div>
+
+
+# Annexes {-}
+
+
+## Infos session  {-}
+
+```{r session_info, echo=FALSE}
+kableExtra::kable_styling(kable(sessionRzine()[[1]], row.names = F))
+kableExtra::kable_styling(kable(sessionRzine()[[2]], row.names = F))
+```
+
+
+## Citation {-}
+
+```{r generateBibliography, echo=FALSE}
+
+cat(readLines('cite.bib'), sep = '\n')
+
+``` 
+
+<br>
+
+## Glossaire {- #endnotes}
+
+```{js, echo=FALSE}
+
+$(document).ready(function() {
+  $('.footnotes ol').appendTo('#endnotes');
+  $('.footnotes').remove();
+});
+
+```
